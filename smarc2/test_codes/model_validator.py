@@ -14,6 +14,10 @@ from collections import deque
 import threading
 import math
 import time
+import numpy as np
+
+from sam_model import SAM
+
 
 def quaternion_to_euler(x, y, z, w):
     sinr_cosp = 2.0 * (w * x + y * z)
@@ -35,23 +39,32 @@ def quaternion_to_euler(x, y, z, w):
 class FullStatePlotterNode(Node):
     def __init__(self):
         super().__init__('full_state_plotter_node')
-        
+
         max_pts = 1000 
         self.start_time = time.time()
-        
+
         self.sam1_data = self._init_data_dict(max_pts)
         self.sam2_data = self._init_data_dict(max_pts)
+
+        # Initialize SAM 2 Simulation
+        self.dt = 0.1
+        self.sam2_sim = SAM(dt=self.dt)
+        self.sim_initialized = False
+        
+        # u_cmd: [rpm1, rpm2, d_pitch, d_yaw, vbs_pct, lcg_pct]
+        self.latest_u = [0.0, 0.0, 0.0, 0.0, 50.0, 50.0] 
+        self.create_timer(self.dt, self.sim_timer_cb)
 
         # Odometry Subscribers
         self.create_subscription(Odometry, '/sam_1/smarc/odom', self.sam1_odom_cb, 10)
 
         # Feedback Subscribers (SAM 1)
-        self.create_subscription(Float32, '/sam_1/core/standard/lcg_fb', self.make_cb(self.sam1_data, 't_lcg', 'lcg'), 10)
-        self.create_subscription(Float32, '/sam_1/core/standard/vbs_fb', self.make_cb(self.sam1_data, 't_vbs', 'vbs'), 10)
-        self.create_subscription(Float32, '/sam_1/core/standard/thruster1_fb', self.make_cb(self.sam1_data, 't_t1', 't1'), 10)
-        self.create_subscription(Float32, '/sam_1/core/standard/thruster2_fb', self.make_cb(self.sam1_data, 't_t2', 't2'), 10)
-    
-        self.get_logger().info("Subscribed to Odometry and Control Feedbacks for SAM 1")
+        self.create_subscription(Float32, '/sam_1/core/standard/thruster1_fb', self.make_cb(self.sam1_data, 't_t1', 't1', u_idx=0), 10)
+        self.create_subscription(Float32, '/sam_1/core/standard/thruster2_fb', self.make_cb(self.sam1_data, 't_t2', 't2', u_idx=1), 10)
+        self.create_subscription(Float32, '/sam_1/core/standard/vbs_fb', self.make_cb(self.sam1_data, 't_vbs', 'vbs', u_idx=4), 10)
+        self.create_subscription(Float32, '/sam_1/core/standard/lcg_fb', self.make_cb(self.sam1_data, 't_lcg', 'lcg', u_idx=5), 10)
+
+        self.get_logger().info("Subscribed to Odometry and Control Feedbacks for SAM 1. Simulating SAM 2.")
 
     def _init_data_dict(self, maxlen):
         return {
@@ -60,54 +73,87 @@ class FullStatePlotterNode(Node):
             'roll': deque(maxlen=maxlen), 'pitch': deque(maxlen=maxlen), 'yaw': deque(maxlen=maxlen),
             'vx': deque(maxlen=maxlen), 'vy': deque(maxlen=maxlen), 'vz': deque(maxlen=maxlen),
             'wx': deque(maxlen=maxlen), 'wy': deque(maxlen=maxlen), 'wz': deque(maxlen=maxlen),
-            # Independent time buffers for async feedback topics
             't_lcg': deque(maxlen=maxlen), 'lcg': deque(maxlen=maxlen),
             't_vbs': deque(maxlen=maxlen), 'vbs': deque(maxlen=maxlen),
             't_t1': deque(maxlen=maxlen),  't1': deque(maxlen=maxlen),
             't_t2': deque(maxlen=maxlen),  't2': deque(maxlen=maxlen)
         }
 
-    def make_cb(self, data_dict, t_key, val_key):
-        """Helper to generate callbacks for simple float topics"""
+    def make_cb(self, data_dict, t_key, val_key, u_idx=None):
+        """Helper to generate callbacks for simple float topics and update simulation inputs."""
         def callback(msg):
             current_time = time.time() - self.start_time
             data_dict[t_key].append(current_time)
             data_dict[val_key].append(msg.data)
+            
+            # Mirror the input to the SAM 2 simulation vector
+            if u_idx is not None:
+                self.latest_u[u_idx] = msg.data
         return callback
+
+    def sam1_odom_cb(self, msg): 
+        self.extract_odom_data(msg, self.sam1_data)
+
+    def sim_timer_cb(self):
+        """Steps the SAM 2 model forward using SAM 1's latest inputs."""
+        if not self.sim_initialized:
+            return
+
+        current_time = time.time() - self.start_time
+        
+        # Step the simulated model
+        nu, eta = self.sam2_sim.step(self.latest_u.copy())
+        
+        d2 = self.sam2_data
+        d2['t_odom'].append(current_time)
+        d2['x'].append(eta[0]);  d2['y'].append(eta[1]);  d2['z'].append(eta[2])
+        d2['roll'].append(eta[3]); d2['pitch'].append(eta[4]); d2['yaw'].append(eta[5])
+        d2['vx'].append(nu[0]);  d2['vy'].append(nu[1]);  d2['vz'].append(nu[2])
+        d2['wx'].append(nu[3]);  d2['wy'].append(nu[4]);  d2['wz'].append(nu[5])
+        
+        # Log simulated inputs (mirrored from SAM 1)
+        d2['t_t1'].append(current_time); d2['t1'].append(self.latest_u[0])
+        d2['t_t2'].append(current_time); d2['t2'].append(self.latest_u[1])
+        d2['t_vbs'].append(current_time); d2['vbs'].append(self.latest_u[4])
+        d2['t_lcg'].append(current_time); d2['lcg'].append(self.latest_u[5])
 
     def extract_odom_data(self, msg, data_dict):
         current_time = time.time() - self.start_time
-        
+
         x = msg.pose.pose.position.x
         y = - msg.pose.pose.position.y
         z = - msg.pose.pose.position.z
-        
+
         q = msg.pose.pose.orientation
         roll, pitch, yaw = quaternion_to_euler(q.x, q.y, q.z, q.w)
         pitch = - pitch
         yaw = - yaw
-        
+
         vx = msg.twist.twist.linear.x
         vy = - msg.twist.twist.linear.y
         vz = - msg.twist.twist.linear.z
-        
+
         wx = msg.twist.twist.angular.x
         wy = - msg.twist.twist.angular.y
         wz = - msg.twist.twist.angular.z
-        
+
+        # Initialize SAM 2 simulation states based on SAM 1's first odometry reading
+        if data_dict is self.sam1_data and not self.sim_initialized:
+            self.sam2_sim.eta = np.array([x, y, z, roll, pitch, yaw])
+            self.sam2_sim.nu = np.array([vx, vy, vz, wx, wy, wz])
+            self.sim_initialized = True
+            self.get_logger().info(f"SAM 2 model initialized at [X:{x:.2f}, Y:{y:.2f}, Z:{z:.2f}]")
+
         data_dict['t_odom'].append(current_time)
         data_dict['x'].append(x);  data_dict['y'].append(y);  data_dict['z'].append(z)
         data_dict['roll'].append(roll); data_dict['pitch'].append(pitch); data_dict['yaw'].append(yaw)
         data_dict['vx'].append(vx); data_dict['vy'].append(vy); data_dict['vz'].append(vz)
         data_dict['wx'].append(wx); data_dict['wy'].append(wy); data_dict['wz'].append(wz)
 
-    def sam1_odom_cb(self, msg): self.extract_odom_data(msg, self.sam1_data)
-    def sam2_odom_cb(self, msg): self.extract_odom_data(msg, self.sam2_data)
-
 
 # --- Matplotlib Dashboard Setup ---
 fig = plt.figure(figsize=(20, 14))
-fig.canvas.manager.set_window_title('SAM 1: Full State & Controls')
+fig.canvas.manager.set_window_title('SAM: Actual vs Simulated Dynamics')
 
 # 5x4 Grid Layout
 gs = gridspec.GridSpec(5, 4, figure=fig)
@@ -142,16 +188,21 @@ def update_plot(frame, node):
     all_axes = [ax_x, ax_y, ax_z, ax_roll, ax_pitch, ax_yaw, 
                 ax_vx, ax_vy, ax_vz, ax_wx, ax_wy, ax_wz, 
                 ax_lcg, ax_vbs, ax_t1, ax_t2, ax_2d, ax_3d]
-    
+
     for ax in all_axes: ax.cla()
 
     d1 = node.sam1_data
+    d2 = node.sam2_data
 
     def plot_pair(ax, t_key, y_key, title, ylabel):
-        ax.plot(d1[t_key], d1[y_key], label='SAM 1', color='blue')
+        if len(d1[t_key]) > 0:
+            ax.plot(d1[t_key], d1[y_key], label='SAM 1 Actual', color='blue')
+        if len(d2[t_key]) > 0:
+            ax.plot(d2[t_key], d2[y_key], label='SAM 2 Sim', color='red', linestyle='--')
         ax.set_title(title, fontsize=9)
         ax.set_ylabel(ylabel, fontsize=8)
         ax.grid(True)
+        ax.legend(loc='upper right', fontsize=7)
 
     # 1. Position States
     plot_pair(ax_x, 't_odom', 'x', 'Position X', 'X (m)')
@@ -183,20 +234,27 @@ def update_plot(frame, node):
         ax.set_xlabel('Time (s)', fontsize=8)
 
     # --- 2D Trajectory Plot (X vs Y) ---
-    ax_2d.plot(d1['x'], d1['y'], label='SAM 1', color='blue')
+    if len(d1['x']) > 0:
+        ax_2d.plot(d1['x'], d1['y'], label='SAM 1 Actual', color='blue')
+    if len(d2['x']) > 0:
+        ax_2d.plot(d2['x'], d2['y'], label='SAM 2 Sim', color='red', linestyle='--')
     ax_2d.set_title('2D Trajectory (X-Y)', fontsize=10, fontweight='bold')
     ax_2d.set_xlabel('X Position (m)', fontsize=8)
     ax_2d.set_ylabel('Y Position (m)', fontsize=8)
-    ax_2d.legend(loc='upper right')
+    ax_2d.legend(loc='upper right', fontsize=8)
     ax_2d.grid(True)
     ax_2d.axis('equal')
 
     # --- 3D Trajectory Plot (X vs Y vs Z) ---
-    ax_3d.plot(d1['x'], d1['y'], d1['z'], label='SAM 1', color='blue')
+    if len(d1['x']) > 0:
+        ax_3d.plot(d1['x'], d1['y'], d1['z'], label='SAM 1 Actual', color='blue')
+    if len(d2['x']) > 0:
+        ax_3d.plot(d2['x'], d2['y'], d2['z'], label='SAM 2 Sim', color='red', linestyle='--')
     ax_3d.set_title('3D Trajectory (X-Y-Z)', fontsize=10, fontweight='bold')
     ax_3d.set_xlabel('X (m)', fontsize=8)
     ax_3d.set_ylabel('Y (m)', fontsize=8)
     ax_3d.set_zlabel('Z (m)', fontsize=8)
+    ax_3d.legend(loc='upper right', fontsize=8)
 
     plt.tight_layout()
 

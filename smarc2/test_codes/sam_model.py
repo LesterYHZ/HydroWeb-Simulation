@@ -1,7 +1,8 @@
 import numpy as np
+from gnc import m2c
 
-class SAMAuvDynamicModel:
-    def __init__(self, dt=0.1):
+class SAM:
+    def __init__(self, dt=0.1, nu_init = np.zeros(6), eta_init = np.zeros(6)):
         """
         Initialize the SAM AUV 6-DOF Fossen Model.
         :param dt: Integration time step (seconds)
@@ -12,74 +13,51 @@ class SAMAuvDynamicModel:
         # Static Vehicle Parameters
         self.m_base = 12.012 + 0.3  # Base mass + Piston (kg)
         self.max_vbs_mass = 0.249   # Max water intake (kg)
-        self.xg_min = -0.057         # Min LCG offset (m)
-        self.xg_max = 0          # Max LCG offset (m)
-        self.B = (self.m_base + (self.max_vbs_mass / 2.0)) * self.g # Assumed constant Buoyancy force (N)
-        self.L_t = 0.73             # Thruster distance from CG (m)
+        self.xg_min = -0.057/2.0         # Min LCG offset (m)
+        self.xg_max = 0.057/2.0          # Max LCG offset (m)
+        self.B = (self.m_base + (self.max_vbs_mass * 0.5)) * self.g # Assumed constant Buoyancy force (N)
         
         # Rigid Body Inertias (kg*m^2)
         self.Ix = 0.0293
         self.Iy = 1.6202
-        self.Iz = 1.6202
-        
+        self.Iz = 1.6202 
         # State Vectors
-        self.nu = np.zeros(6)  # Body velocities [u, v, w, p, q, r]
-        self.eta = np.zeros(6) # Inertial pose [x, y, z, phi, theta, psi]
+        self.nu = nu_init  # Body velocities [u, v, w, p, q, r]
+        self.eta = eta_init # Inertial pose [x, y, z, phi, theta, psi]
         
     def _get_varying_params(self, vbs, lcg):
         """Calculates mass and longitudinal center of gravity from inputs."""
         m = self.m_base + (self.max_vbs_mass * (vbs / 100.0))
         xg = np.interp(lcg, [0, 100], [self.xg_min, self.xg_max])
+        xg = np.round(xg, decimals=2)
         return m, xg
 
     def get_matrices(self, nu, eta, u_cmd):
         """Builds the Fossen system matrices."""
-        rpm1, rpm2, d_pitch, d_yaw, vbs, lcg = u_cmd
+        rpm1, rpm2, d_aileron, d_rudder, vbs, lcg = u_cmd
         u, v, w, p, q, r = nu
         phi, theta, psi = eta[3], eta[4], eta[5]
         
         m, xg = self._get_varying_params(vbs, lcg)
         
         # 1. Mass Matrix M(u)
-        M = np.diag([m, m, m, self.Ix, self.Iz, self.Iy])
+        M = np.diag([m, m, m, self.Ix, self.Iy, self.Iz])
         M[1, 5] = m * xg   # Y-r coupling
         M[2, 4] = -m * xg  # Z-q coupling
         M[4, 2] = -m * xg  # M-w coupling
         M[5, 1] = m * xg   # N-v coupling
 
         # 2. Coriolis Matrix C_RB(nu, u)
-        C = np.zeros((6, 6))
-        C[0, 4] = m * (w - xg * q)
-        C[0, 5] = -m * (v + xg * r)
-        C[1, 3] = -m * w
-        C[1, 4] = m * xg * p
-        C[1, 5] = m * u
-        C[2, 3] = m * v
-        C[2, 4] = -m * u
-        C[2, 5] = m * xg * p
-        C[3, 1] = m * w
-        C[3, 2] = -m * v
-        C[3, 4] = -self.Iy * r
-        C[3, 5] = -self.Iz * q
-        C[4, 0] = -m * (w - xg * q)
-        C[4, 1] = -m * xg * p
-        C[4, 2] = m * u
-        C[4, 3] = self.Iy * r
-        C[4, 5] = self.Ix * p
-        C[5, 0] = m * (v + xg * r)
-        C[5, 1] = -m * u
-        C[5, 2] = -m * xg * p
-        C[5, 3] = self.Iz * q
-        C[5, 4] = -self.Ix * p
+        C = m2c(M, nu)
 
         # 3. Damping Matrix D(nu)
-        D = np.diag([5*abs(u), 20*abs(v), 50*abs(w), 1*abs(p), 20*abs(q), 20*abs(r)])
-        D[4, 2] = 5 * abs(w)  # Pitch-Heave coupling from cp_x = 0.1
-        D[5, 1] = -2 * abs(v) # Yaw-Sway coupling from cp_x = 0.1
+        D = np.diag([1*abs(u), 1*abs(v), 1*abs(w), 1*abs(p), 1*abs(q), 1*abs(r)])
+        #D[4, 2] = 5 * abs(w)  # Pitch-Heave coupling from cp_x = 0.1
+        #D[5, 1] = -2 * abs(v) # Yaw-Sway coupling from cp_x = 0.1
         
         # 4. Restoring Forces g(eta, u)
-        W = m * 9.81
-        g = np.array([
+        W = m * self.g
+        G = np.array([
             (W - self.B) * np.sin(theta),
             -(W - self.B) * np.cos(theta) * np.sin(phi),
             -(W - self.B) * np.cos(theta) * np.cos(phi),
@@ -89,22 +67,23 @@ class SAMAuvDynamicModel:
         ])
         
         # 5. Actuation tau(u)
-        def thrust(rpm):
-            return (rpm * 0.005) if rpm >= 0 else (rpm * 0.005 * 0.6)
-            
-        F_T1, F_T2 = thrust(rpm1), thrust(rpm2)
-        F_T = F_T1 + F_T2
+        F_T = 0.0175 * (rpm1 + rpm2)
+        M_T = 0.01 * (rpm1 + rpm2)
+        M_Tx = 0.01 * (rpm1 - rpm2)
+
+        d_e = d_aileron * 0.1
+        d_r = d_rudder * 0.1
         
         tau = np.array([
-            F_T * np.cos(d_pitch) * np.cos(d_yaw),
-            F_T * np.cos(d_pitch) * np.sin(d_yaw),
-            -F_T * np.sin(d_pitch),
-            (F_T1 - F_T2) * 8.004e-4,
-            F_T * np.sin(d_pitch) * self.L_t,
-            F_T * np.cos(d_pitch) * np.sin(d_yaw) * self.L_t
+            F_T * np.cos(d_e) * np.cos(d_r),
+            F_T * np.cos(d_r) * np.sin(d_e),
+            F_T * np.sin(d_r),
+            M_Tx * np.cos(d_e) * np.cos(d_r),
+            M_T * np.sin(d_r),
+            M_T * np.cos(d_r) * np.sin(d_e)
         ])
 
-        return M, C, D, g, tau
+        return M, C, D, G, tau
 
     def kinematic_transform(self, eta):
         """Maps Body frame velocities to Inertial frame (J matrix)."""
@@ -127,6 +106,8 @@ class SAMAuvDynamicModel:
                 [0, cphi,              -sphi],
                 [0, sphi / cth,         cphi / cth]
             ]
+        else:
+            J[3:6, 3:6] = np.eye(3)
         return J
 
     def step(self, u_cmd):
@@ -136,16 +117,18 @@ class SAMAuvDynamicModel:
         :return: updated (nu, eta)
         """
         # Clamp inputs
+        u_cmd[0] = np.clip(u_cmd[0], -1000, 1000)
+        u_cmd[1] = np.clip(u_cmd[1], -1000, 1000)
         u_cmd[2] = np.clip(u_cmd[2], -0.2, 0.2)
         u_cmd[3] = np.clip(u_cmd[3], -0.2, 0.2)
         u_cmd[4] = np.clip(u_cmd[4], 0, 100)
         u_cmd[5] = np.clip(u_cmd[5], 0, 100)
 
-        M, C, D, g, tau = self.get_matrices(self.nu, self.eta, u_cmd)
+        M, C, D, G, tau = self.get_matrices(self.nu, self.eta, u_cmd)
         
         # nu_dot = M^-1 * (tau - C*nu - D*nu - g)
         M_inv = np.linalg.inv(M)
-        nu_dot = M_inv.dot(tau - C.dot(self.nu) - D.dot(self.nu) - g)
+        nu_dot = M_inv.dot(tau - C.dot(self.nu) - D.dot(self.nu) - G)
         
         # Kinematics
         J = self.kinematic_transform(self.eta)
@@ -156,3 +139,4 @@ class SAMAuvDynamicModel:
         self.eta += eta_dot * self.dt
         
         return self.nu, self.eta
+
