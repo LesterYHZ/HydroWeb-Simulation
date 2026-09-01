@@ -1,0 +1,17 @@
+"": # applies to all colcon subcommands
+    log-base: /code/ros2_ws/log
+
+build:
+    symlink-install: true
+    build-base: /code/ros2_ws/build
+    install-base: /code/ros2_ws/install
+    base-paths:
+        - /code/ros2_ws/src
+
+test:
+    build-base: /code/ros2_ws/build
+    install-base: /code/ros2_ws/install
+    event-handlers:
+        - console_direct+
+    base-paths:
+        - /code/ros2_ws/src

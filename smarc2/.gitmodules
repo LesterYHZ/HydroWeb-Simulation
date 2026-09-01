@@ -1,0 +1,91 @@
+[submodule "external_packages/ROS-TCP-Endpoint"]
+	path = external_packages/ROS-TCP-Endpoint
+	url = https://github.com/KKalem/ROS-TCP-Endpoint
+	branch = humble
+[submodule "external_packages/mqtt_bridge"]
+	path = external_packages/mqtt_bridge
+	url = https://github.com/KKalem/mqtt_bridge
+	branch = humble
+[submodule "drivers/sbg_ros2_driver"]
+	path = drivers/sbg_ros2_driver
+	url = git@github.com:smarc-project/sbg_ros2_driver.git
+[submodule "vehicles/hardware/sam/sam_drivers"]
+	path = vehicles/hardware/sam/sam_drivers
+	url = git@github.com:smarc-project/sam_drivers.git
+	branch = humble
+[submodule "drivers/nmea_navsat_driver"]
+	path = drivers/nmea_navsat_driver
+	url = git@github.com:smarc-project/nmea_navsat_driver.git
+	branch = ros2
+[submodule "drivers/stim300"]
+	path = drivers/stim300
+	url = git@github.com:smarc-project/stim300.git
+	branch = humble
+[submodule "drivers/dvl-a50-ros-driver"]
+	path = drivers/dvl-a50-ros-driver
+	url = git@github.com:smarc-project/dvl-a50-ros-driver.git
+	branch = humble
+[submodule "drivers/ublox"]
+	path = drivers/ublox
+	url = https://github.com/KumarRobotics/ublox.git
+	branch = ros2
+[submodule "external_packages/smarc_modelling"]
+	path = external_packages/smarc_modelling
+	url = https://github.com/smarc-project/smarc_modelling.git
+[submodule "vehicles/hardware/dji/psdk_ros2"]
+	path = vehicles/hardware/dji/psdk_ros2
+	url = https://gitr.sys.kth.se/smarc-project/dji_psdk_wrapper.git
+	branch = smarc
+[submodule "utilities/serial_ping_pkg"]
+	path = utilities/serial_ping_pkg
+	url = git@github.com:NinjaTuna007/serial_ping_pkg.git
+[submodule "simulation/SMARCUnity"]
+	path = simulation/SMARCUnity
+	url = git@github.com:smarc-project/SMARCUnity.git
+	branch = master
+[submodule "simulation/SMARCAssets"]
+	path = simulation/SMARCAssets
+	url = git@github.com:smarc-project/SMARCAssets.git
+	branch = master
+[submodule "messages/psdk_interfaces"]
+	path = messages/psdk_interfaces
+	url = git@github.com:KKalem/psdk_interfaces.git
+	branch = interfaces_only
+[submodule "drivers/nau7802_ros2_driver"]
+	path = drivers/nau7802_ros2_driver
+	url = git@github.com:smarc-project/nau7802_ros2_driver.git
+[submodule "documentation/smarc2-obsidian"]
+	path = documentation/smarc2-obsidian
+	url = git@github.com:smarc-project/smarc2-obsidian.git
+[submodule "drivers/pingdspinger"]
+	path = drivers/pingdspinger
+	url = git@github.com:NinjaTuna007/pingdspinger.git
+[submodule "drivers/smarc_acomms"]
+	path = drivers/smarc_acomms
+	url = git@gitr.sys.kth.se:smarc-project/smarc_acomms.git
+[submodule "drivers/z1_pro_driver"]
+	path = drivers/z1_pro_driver
+	url = git@github.com:smarc-project/z1_pro_driver.git
+[submodule "perception/alars/alars_labeling_training"]
+	path = perception/alars/alars_labeling_training
+	url = https://github.com/moyucrazy12/alars_labeling_training
+[submodule "external_equipment/qgis/smarc_qgis_mission_control"]
+	path = external_equipment/qgis/smarc_qgis_mission_control
+	url = git@github.com:smarc-project/smarc_qgis_mission_control.git
+[submodule "perception/smarc_yolo/yolo_ros"]
+	path = perception/smarc_yolo/yolo_ros
+	url = git@github.com:smarc-project/yolo_ros.git
+[submodule "navigation/dead_reckoning/hydrobatic_localization"]
+	path = navigation/dead_reckoning/hydrobatic_localization
+	url = git@github.com:ignaciotb/hydrobatic_localization.git
+[submodule "drivers/dv_sss_driver"]
+	path = drivers/dv_sss_driver
+	url = git@github.com:smarc-project/dv_sss_driver.git
+[submodule "drivers/ros_babel_fish"]
+	path = drivers/ros_babel_fish
+	url = https://github.com/LOEWE-emergenCITY/ros_babel_fish.git
+[submodule "vehicles/smarc_modelling"]
+	path = vehicles/smarc_modelling
+	url = git@github.com:smarc-project/smarc_modelling.git
+[submodule "navigation/dead_reckoning/hydrobatic_localization/"]
+	url = git@github.com:smarc-project/hydrobatic_localization.git

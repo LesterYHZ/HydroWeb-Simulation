@@ -1,0 +1,49 @@
+<?xml version="1.0" ?>
+<robot name="evolo">
+  <link name="evolo/base_link">
+    <!-- <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      < geometry>
+        <mesh filename="file:///home/julian/colcon_ws/install/lolo_description/share/lolo_description/mesh/lolo_hull.dae" scale="1 1 1"/>
+      </geometry>
+    </visual> -->
+  </link>
+
+  <link name="evolo/lidar_link"/>
+  <link name="evolo/z1_base_link"/>
+
+  <link name="os_sensor"/>
+  <link name="os_lidar"/>
+  <link name="os_imu"/>
+  
+  
+
+  <joint name="evolo/lidar_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.83 0.0 0.1"/>
+    <parent link="evolo/base_link"/>
+    <child link="evolo/lidar_link"/>
+  </joint>
+  <joint name="evolo/camera_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.7 0.0 0.15"/>
+    <parent link="evolo/base_link"/>
+    <child link="evolo/z1_base_link"/>
+  </joint>
+
+  <joint name="evolo/os_lidar_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="evolo/lidar_link"/>
+    <child link="os_sensor"/>
+  </joint>
+
+  <joint name="sensor_lidar_joint" type="fixed">
+    <origin rpy="0 0 3.141592653589793" xyz="0 0 0.038"/>
+    <parent link="os_sensor"/>
+    <child link="os_lidar"/>
+  </joint>
+
+  <joint name="sensor_imu_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.002 -0.010 0.008"/>
+    <parent link="os_sensor"/>
+    <child link="os_imu"/>
+  </joint>
+</robot>
